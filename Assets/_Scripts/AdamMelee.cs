@@ -38,24 +38,18 @@ private void ExecutePunch()
 
         Debug.DrawRay(cameraTransform.position, cameraTransform.forward * punchRange, Color.red, 0.4f);
 
-        if (Physics.Raycast(ray, out hitData, punchRange))
+        if (Physics.Raycast(ray, out hitData, punchRange)) // Use fireRange for the gun
         {
-            // UPGRADED: Scan specifically for our new moving AI script
-            EnemyBrain target = hitData.collider.GetComponent<EnemyBrain>();
-
+            // Ask for the "sticky note"
+            IDamageable target = hitData.collider.GetComponent<IDamageable>();
+            
             if (target != null)
             {
-                // Calculate directional knockback using camera direction
-                Vector3 knockbackDir = cameraTransform.forward;
+                // If they have the sticky note, hurt them!
+                target.TakeDamage(punchDamage, cameraTransform.forward); // Use fireDamage for the gun
                 
-                target.TakeDamage(punchDamage, knockbackDir);
+                // (Only put this Hatred line in AdamMelee.cs, not the gun!)
                 AdamState.Instance.GainHatred(15f); 
-            }
-            YuriBoss boss = hitData.collider.GetComponent<YuriBoss>();
-            if (boss != null)
-            {
-                boss.TakeBossDamage(punchDamage);
-                AdamState.Instance.GainHatred(15f);
             }
         }
     }

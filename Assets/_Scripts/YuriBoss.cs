@@ -4,7 +4,7 @@ using TMPro; // Necessary inclusion to drive textual UI canvas references
 using UnityEngine.InputSystem; // Access New Input System direct hardware queries
 
 [RequireComponent(typeof(NavMeshAgent))]
-public class YuriBoss : MonoBehaviour
+public class YuriBoss : MonoBehaviour, IDamageable
 {
     public enum BossState { Intro, Stalking, DefensiveStance, MakarovAim, BladeSweep, Defeated }
     
@@ -26,7 +26,7 @@ public class YuriBoss : MonoBehaviour
     private float stateTimer = 0f;
 
     [Header("Destiny Choice Links")]
-    private TextMeshProUGUI choiceTextUI;
+    public TextMeshProUGUI choiceTextUI;
     public float interactionRange = 5f;
 
     private Renderer meshRenderer;
@@ -163,7 +163,7 @@ public class YuriBoss : MonoBehaviour
         currentState = BossState.Stalking;
     }
 
-    public void TakeBossDamage(float amount)
+    public void TakeDamage(float amount, Vector3 knockbackDir)
     {
         if (currentState == BossState.Defeated) return;
 

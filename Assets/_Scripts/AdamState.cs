@@ -1,8 +1,12 @@
 using UnityEngine;
+using System; 
 
 public class AdamState : MonoBehaviour
 {
     public static AdamState Instance { get; private set; }
+
+    // This is the "Shout" event that the UI will listen for
+    public event Action OnStateChanged; 
 
     [Header("Health Pools")]
     public float maxHealth = 100f;
@@ -27,27 +31,48 @@ public class AdamState : MonoBehaviour
 
         currentHealth = maxHealth;
         currentHatred = 0f;
-        currentAmmo = maxAmmo; // Start with a loaded gun
+        currentAmmo = maxAmmo;
+    }
+
+    private void Start()
+    {
+        // Shout once at the start so the UI sets itself up instantly
+        OnStateChanged?.Invoke(); 
     }
 
     public void GainHatred(float amount)
     {
         currentHatred = Mathf.Clamp(currentHatred + amount, 0f, maxHatred);
+        OnStateChanged?.Invoke(); 
     }
 
-    // --- NEW METHOD: Consumes Hatred to reload/fire weapon ---
     public bool SpendHatred(float amount)
     {
         if (currentHatred >= amount)
         {
             currentHatred -= amount;
-            return true; // Successfully spent!
+            OnStateChanged?.Invoke(); 
+            return true; 
         }
-        return false; // Not enough Hatred!
+        return false; 
     }
 
     public void TakeDamage(float amount)
     {
         currentHealth = Mathf.Clamp(currentHealth - amount, 0f, maxHealth);
+        OnStateChanged?.Invoke(); 
+    }
+
+    // --- NEW AMMO METHODS ---
+    public void ConsumeAmmo()
+    {
+        currentAmmo--;
+        OnStateChanged?.Invoke();
+    }
+
+    public void ReloadAmmo()
+    {
+        currentAmmo = maxAmmo;
+        OnStateChanged?.Invoke();
     }
 }

@@ -6,9 +6,9 @@ public class AdamFirearm : MonoBehaviour
     private Transform cameraTransform;
 
     [Header("Ballistic Settings")]
-    public float fireRange = 50f;       // Long range firearm limits
-    public float fireDamage = 2.0f;     // Deals double punch damage
-    public float hatredCostPerShot = 10f; // Costs 10 Hatred points to fire
+    public float fireRange = 50f;       
+    public float fireDamage = 2.0f;     
+    public float hatredCostPerShot = 10f; 
 
     private void Awake()
     {
@@ -19,7 +19,6 @@ public class AdamFirearm : MonoBehaviour
     private void OnEnable()
     {
         controls.Enable();
-        // Listen for our universal attack input trigger
         controls.Player.Attack.performed += ctx => ShootWeapon();
     }
 
@@ -29,7 +28,7 @@ public class AdamFirearm : MonoBehaviour
         controls.Player.Attack.performed -= ctx => ShootWeapon();
     }
 
-private void ShootWeapon()
+    private void ShootWeapon()
     {
         if (!AdamState.Instance.SpendHatred(hatredCostPerShot))
         {
@@ -37,7 +36,8 @@ private void ShootWeapon()
             return;
         }
 
-        AdamState.Instance.currentAmmo--;
+        // Use the new method so the UI updates
+        AdamState.Instance.ConsumeAmmo();
         Debug.Log($"💥 Shot fired! Ammo Remaining: {AdamState.Instance.currentAmmo}");
 
         Ray ray = new Ray(cameraTransform.position, cameraTransform.forward);
@@ -47,24 +47,18 @@ private void ShootWeapon()
 
         if (Physics.Raycast(ray, out hitData, fireRange))
         {
-            // UPGRADED: Scan specifically for our new moving AI script
-            EnemyBrain target = hitData.collider.GetComponent<EnemyBrain>();
+            // Universal Damage System
+            IDamageable target = hitData.collider.GetComponent<IDamageable>();
             if (target != null)
             {
-                // Ballistic firearm transfers high momentum forces across distances
-                Vector3 knockbackDir = cameraTransform.forward;
-                target.TakeDamage(fireDamage, knockbackDir);
-            }
-            YuriBoss boss = hitData.collider.GetComponent<YuriBoss>();
-            if (boss != null)
-            {
-                boss.TakeBossDamage(fireDamage);
+                target.TakeDamage(fireDamage, cameraTransform.forward);
             }
         }
 
         if (AdamState.Instance.currentAmmo <= 0)
         {
-            AdamState.Instance.currentAmmo = AdamState.Instance.maxAmmo;
+            // Use the new method so the UI updates
+            AdamState.Instance.ReloadAmmo();
             Debug.Log("🔄 Firearm mechanics cycled.");
         }
     }

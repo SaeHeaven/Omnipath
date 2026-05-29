@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent))]
-public class EnemyBrain : MonoBehaviour
+public class EnemyBrain : MonoBehaviour, IDamageable // <-- Added IDamageable here so the new guns work!
 {
     public enum Faction { Angel, Wrath }
 
@@ -12,10 +12,9 @@ public class EnemyBrain : MonoBehaviour
 
     [Header("Elite & Honor Configurations")]
     public bool isFortressGuard = false;
-    public bool standsDownWithHonor = false; // If true, AI will not attack Adam out of respect
+    public bool standsDownWithHonor = false; 
 
     private NavMeshAgent agent;
-    private Transform playerTarget;
 
     [Header("Combat Stats")]
     public float maxHealth = 10f;
@@ -29,6 +28,12 @@ public class EnemyBrain : MonoBehaviour
     private float staggerTimer = 0f;
     private bool isStaggered = false;
 
+    [Header("Proxy War Radar (New System)")]
+    public float detectionRadius = 15f;
+    public float radarPulseRate = 0.5f;
+    private float radarTimer = 0f;
+    private Transform activeTarget; 
+
     private void Awake()
     {
         agent = GetComponent<NavMeshAgent>();
@@ -38,28 +43,11 @@ public class EnemyBrain : MonoBehaviour
 
     private void Start()
     {
-        AdamController playerScript = FindFirstObjectByType<AdamController>();
-        if (playerScript != null)
-        {
-            playerTarget = playerScript.transform;
-        }
-
-        // SYSTEMIC RULE: If this is a Max Alert Fortress Guard, turn them into a giant Mini-Boss!
-        if (isFortressGuard && !standsDownWithHonor)
-        {
-            transform.localScale = new Vector3(2f, 2.5f, 2f); // Double their physical scale!
-            maxHealth = 40f; // Quadruple their health pool
-            currentHealth = maxHealth;
-            agent.speed = 6f; // Make them faster and more terrifying
-        }
-        // If they stand down with honor, they still spawn at normal/large size but frozen
-        else if (isFortressGuard && standsDownWithHonor)
-        {
-            transform.localScale = new Vector3(2f, 2.5f, 2f); // Still look imposing!
-            agent.isStopped = true; // Stop their pathfinding wheel drivers completely
-        }
+        // We removed the code that forced them to hunt Adam permanently.
+        // The Radar handles it now!
     }
 
+    // Allows the Outpost script to connect to this unit
     public void AssignToOutpost(Outpost outpost)
     {
         assignedOutpost = outpost;
@@ -67,12 +55,8 @@ public class EnemyBrain : MonoBehaviour
 
     private void Update()
     {
-        // HONOR CHECK: If standing down out of respect, do absolutely nothing
-        if (standsDownWithHonor)
-        {
-            if (agent.enabled) agent.isStopped = true;
-            return;
-        }
+        if (currentHealth <= 0f) return;
+        if (agent == null || !agent.enabled) return;
 
         if (isStaggered)
         {
@@ -85,10 +69,50 @@ public class EnemyBrain : MonoBehaviour
             return; 
         }
 
-        if (playerTarget != null)
+        // --- THE RADAR PULSE SYSTEM ---
+        if (activeTarget == null)
         {
-            agent.SetDestination(playerTarget.position);
+            radarTimer -= Time.deltaTime;
+            if (radarTimer <= 0f)
+            {
+                ScanForTargets();
+                radarTimer = radarPulseRate;
+            }
         }
+        else
+        {
+            // Tunnel Vision: Chase the active target once found
+            agent.SetDestination(activeTarget.position);
+        }
+    }
+
+    private void ScanForTargets()
+    {
+        // Send out an invisible sphere to find objects
+        Collider[] hits = Physics.OverlapSphere(transform.position, detectionRadius);
+        Transform potentialPlayer = null;
+        Transform potentialEnemy = null;
+
+        foreach (Collider hit in hits)
+        {
+            // CRITICAL: Make sure the Adam GameObject has the tag "Player" in the Unity Editor!
+            if (hit.CompareTag("Player")) potentialPlayer = hit.transform;
+            
+            EnemyBrain otherAI = hit.GetComponent<EnemyBrain>();
+            if (otherAI != null && otherAI.enemyFaction != this.enemyFaction && otherAI.currentHealth > 0)
+            {
+                potentialEnemy = hit.transform;
+            }
+        }
+
+        // The Logic Coin Flip
+        if (potentialPlayer != null && potentialEnemy != null)
+        {
+            // 50/50 chance to pick either the player or the enemy faction
+            activeTarget = (Random.Range(1, 101) <= 50) ? potentialPlayer : potentialEnemy;
+        }
+        else if (potentialPlayer != null) activeTarget = potentialPlayer;
+        else if (potentialEnemy != null) activeTarget = potentialEnemy;
     }
 
     public void TakeDamage(float damageAmount, Vector3 knockbackDirection)
@@ -96,7 +120,6 @@ public class EnemyBrain : MonoBehaviour
         currentHealth -= damageAmount;
         Debug.Log($"🩸 {enemyFaction} Unit Hit! Health: {currentHealth}/{maxHealth}");
 
-        // Honorable guards will retaliate ONLY if Adam acts dishonorably by attacking them first!
         if (standsDownWithHonor)
         {
             standsDownWithHonor = false;
@@ -113,11 +136,13 @@ public class EnemyBrain : MonoBehaviour
         if (currentHealth <= 0f)
         {
             Debug.Log($"💀 {enemyFaction} Unit Obliterated.");
+            
             if (assignedOutpost != null)
             {
                 assignedOutpost.DefenderKilled(this);
             }
-            Destroy(gameObject); 
+            
+            Destroy(gameObject, 0.1f);
         }
     }
 }

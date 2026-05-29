@@ -197,6 +197,13 @@ public class AdamController : MonoBehaviour
         }
 
         // 7. Apply gravity and execute
+        // NEW FIX: If Adam is touching the ground, stop gravity from building up infinitely.
+        // We keep it at a small negative number (-2f) just to keep him firmly snapped to the floor.
+        if (characterController.isGrounded && verticalVelocity.y < 0)
+        {
+            verticalVelocity.y = -2f; 
+        }
+
         verticalVelocity.y += gravity * Time.deltaTime;
         finalHorizontalVelocity.y = verticalVelocity.y;
 
