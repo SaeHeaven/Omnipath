@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 8656066324286043721}
   - component: {fileID: 8820911285401999845}
   - component: {fileID: 5580490509934214484}
-  - component: {fileID: 9128991531643309740}
+  - component: {fileID: 4786119808891715371}
   m_Layer: 0
   m_Name: TargetAI
   m_TagString: Untagged
@@ -138,7 +138,7 @@ NavMeshAgent:
   m_BaseOffset: 1
   m_WalkableMask: 4294967295
   m_ObstacleAvoidanceType: 4
---- !u!114 &9128991531643309740
+--- !u!114 &4786119808891715371
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -147,10 +147,21 @@ MonoBehaviour:
   m_GameObject: {fileID: 319597220739029039}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b679623833e077b4ba97414ecb39177c, type: 3}
+  m_Script: {fileID: 11500000, guid: cd9d85f9e0abf7b44ab6086b97403c0c, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::EnemyBrain
-  enemyFaction: 1
-  maxHealth: 10
-  chaseSpeed: 4.5
-  staggerDuration: 0.35
+  m_EditorClassIdentifier: Assembly-CSharp::AshigaruBrain
+  currentState: 0
+  awareness: 0
+  baseBuildRate: 8
+  decayRate: 3
+  investigateThreshold: 33.3
+  suspiciousWalkSpeed: 2.5
+  chasingRunSpeed: 7
+  detectionRadius: 20
+  viewAngle: 90
+  combatEngageRadius: 10
+  eyeHeightOffset: 1.5
+  showRuntime3DMeshes: 1
+  showEditorGizmos: 1
+  hitBoxDimensions: {x: 1.2, y: 1.96, z: 1.2}
+  hitBoxOffset: {fileID: 7498473121778615950}
