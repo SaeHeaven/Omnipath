@@ -8,27 +8,41 @@ public class AshigaruBrain : MonoBehaviour
 
     [Header("--- CURRENT ACTIVE STATE ---")]
     [SerializeField] private AIState currentState = AIState.Unaware;
-    [Range(0f, 100f)]
-    [Tooltip("Live tracker of how much the AI notices the player.")]
-    public float awareness = 0f;
+    [Range(0f, 100f)] public float awareness = 0f;
+    public bool hasBeenAlerted = false;
+
+    [Header("--- PATROL & SEARCH SYSTEM ---")]
+    [Tooltip("Drag a PatrolRoute GameObject from the scene here.")]
+    public PatrolRoute assignedPatrolRoute;
+    [Tooltip("How wide of an area they randomly scan when they lose you.")]
+    public float searchRadius = 8.0f;
+    [Tooltip("How long they search a room from Yellow/Orange before giving up and returning to patrol.")]
+    public float huntDuration = 15.0f;
+    [Tooltip("Fast speed used when searching if they were previously in full Red alert.")]
+    public float franticJogSpeed = 4.5f;
 
     [Header("--- AWARENESS CONFIGURATION ---")]
-    [Tooltip("Base rate of awareness gain per second when at the edge of vision.")]
     public float baseBuildRate = 8.0f;
-    [Tooltip("Rate of awareness decay per second when the player hides (must be lower than build rate).")]
     public float decayRate = 3.0f;
+    public float visionLeniency = 0.2f;
 
     [Header("--- MOVEMENT DYNAMICS ---")]
-    [Tooltip("Awareness must pass this value before the AI actually leaves its post to investigate.")]
     [Range(10f, 90f)] public float investigateThreshold = 40.0f;
-    [Tooltip("Minimum speed when the AI first starts walking to investigate.")]
     public float suspiciousWalkSpeed = 2.5f;
-    [Tooltip("Maximum sprint speed when awareness hits 100 and they fully lock on.")]
     public float chasingRunSpeed = 7.0f;
+    public float suspiciousAcceleration = 8.0f;
+    public float chasingAcceleration = 60.0f;
+    public float suspiciousTurnSpeed = 120.0f;
+    public float chasingTurnSpeed = 800.0f;
 
-    [Header("--- DETECTION CONFIGURATION ---")]
+    [Header("--- DETECTION ZONES ---")]
+    public float chaseMemoryDuration = 7.0f;
+    [Tooltip("How long they stare at your last spot from Green (low awareness) before going back to patrol.")]
+    public float lowAwarenessMemoryDuration = 3.0f;
+    public float escapeRadius = 40.0f; 
     public float detectionRadius = 15.0f; 
     [Range(10f, 180f)] public float viewAngle = 90.0f;
+    public float visionThickness = 0.35f;
     public float combatEngageRadius = 5.0f; 
     public float eyeHeightOffset = 1.5f;
 
@@ -38,24 +52,46 @@ public class AshigaruBrain : MonoBehaviour
     public Vector3 hitBoxDimensions = new Vector3(1.2f, 1.8f, 1.2f);
     public Transform hitBoxOffset;
 
+    // Tracking references
     private Transform playerTarget;
     private NavMeshAgent agent;
     private float pathTimer;
-    private float pathUpdateTime = 0.2f;
+    private float pathUpdateTime = 0.1f; 
 
+    // Search & Memory State
+    private Vector3 lastKnownPosition;
+    private bool hasLastKnownPosition = false;
+    private bool isPlayerVisible = false;
+    private float currentChaseTimer = 0f;
+    private float currentGraceTimer = 0f;
+    private float currentLowAwarenessTimer = 0f; // NEW: Tracks the "stare down" in green zone
+
+    // Dynamic Scanning & Patrol Trackers
+    private bool isDynamicSearching = false;
+    private float huntTimer = 0f;
+    private float searchWaitTimer = 0f;
+    private Vector3 currentSearchDestination;
+    private int currentPatrolIndex = 0;
+    private float patrolWaitTimer = 0f;
+    private bool isWaitingAtPatrolNode = false;
+
+    // Debug rig variables
     private GameObject debugContainer;
     private GameObject coneVisual;
     private GameObject combatVisual;
+    private GameObject escapeVisual; 
     private GameObject hitboxVisual;
     private MeshFilter coneMeshFilter;
     private Material coneMat;
     private Material combatMat;
+    private Material escapeMat;      
     private bool lastVisualState;
 
     private void Start()
     {
         agent = GetComponent<NavMeshAgent>();
         lastVisualState = showRuntime3DMeshes;
+        agent.autoBraking = true; 
 
         GameObject playerObj = GameObject.FindWithTag("Player");
         if (playerObj != null) playerTarget = playerObj.transform;
@@ -88,12 +124,12 @@ public class AshigaruBrain : MonoBehaviour
         float distanceToPlayer = dirToPlayer.magnitude;
         dirToPlayer.Normalize();
 
-        bool hasLineOfSight = false;
+        isPlayerVisible = false;
 
-        // Step 1: Geometric Validation & X-Ray Penetration Cast
+        // Step 1: Volumetric SphereCast
         if (distanceToPlayer <= detectionRadius && Vector3.Angle(transform.forward, dirToPlayer) <= viewAngle / 2f)
         {
-            RaycastHit[] hits = Physics.RaycastAll(eyePosition, dirToPlayer, detectionRadius);
+            RaycastHit[] hits = Physics.SphereCastAll(eyePosition, visionThickness, dirToPlayer, detectionRadius);
             System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
 
             foreach (RaycastHit hit in hits)
@@ -103,40 +139,134 @@ public class AshigaruBrain : MonoBehaviour
 
                 if (hit.transform.CompareTag("Player") || hit.transform.root.CompareTag("Player"))
                 {
-                    hasLineOfSight = true;
+                    isPlayerVisible = true;
+                    lastKnownPosition = playerTarget.position;
+                    hasLastKnownPosition = true;
+                    isDynamicSearching = false; 
                     break; 
                 }
                 else break; 
             }
         }
 
-        // Step 2: Awareness Math Engine
-        if (hasLineOfSight)
+        // Step 2: The Core Logic Matrix
+        if (awareness >= 100f)
         {
-            if (distanceToPlayer <= combatEngageRadius)
-            {
-                awareness = 100f; // Instant aggro zone
-            }
-            else if (awareness < 100f)
-            {
-                float distanceFactor = Mathf.Lerp(3.0f, 1.0f, distanceToPlayer / detectionRadius);
-                float awarenessRatio = awareness / 100f;
-                float exponentialMultiplier = 1f + (Mathf.Pow(awarenessRatio, 3f) * 6f); 
+            // BUG 2 FIX: Constantly overwrite the ghost marker while fully tracking so they hunt the NEW location!
+            lastKnownPosition = playerTarget.position;
+            hasLastKnownPosition = true;
+            isDynamicSearching = false; 
 
-                float frameBuild = baseBuildRate * distanceFactor * exponentialMultiplier * Time.deltaTime;
-                awareness = Mathf.Clamp(awareness + frameBuild, 0f, 100f);
+            if (distanceToPlayer <= escapeRadius)
+            {
+                currentChaseTimer = chaseMemoryDuration;
+            }
+            else
+            {
+                currentChaseTimer -= Time.deltaTime;
+                if (currentChaseTimer <= 0f)
+                {
+                    // Predatory Chase broke. Drop awareness to 90 to trigger the Frantic Hunt.
+                    awareness = 90f; 
+                    huntTimer = huntDuration; 
+                }
             }
         }
         else
         {
-            if (awareness > 0f && awareness < 100f)
+            if (isPlayerVisible)
             {
-                awareness -= decayRate * Time.deltaTime;
-                awareness = Mathf.Clamp(awareness, 0f, 100f);
+                currentGraceTimer = visionLeniency; 
+                currentLowAwarenessTimer = lowAwarenessMemoryDuration; // Keep the stare timer topped off
+
+                if (hasBeenAlerted || distanceToPlayer <= combatEngageRadius)
+                {
+                    awareness = 100f;
+                    currentChaseTimer = chaseMemoryDuration;
+                }
+                else
+                {
+                    float distanceFactor = Mathf.Lerp(3.0f, 1.0f, distanceToPlayer / detectionRadius);
+                    float awarenessRatio = awareness / 100f;
+                    float exponentialMultiplier = 1f + (Mathf.Pow(awarenessRatio, 3f) * 6f); 
+
+                    float frameBuild = baseBuildRate * distanceFactor * exponentialMultiplier * Time.deltaTime;
+                    awareness = Mathf.Clamp(awareness + frameBuild, 0f, 100f);
+
+                    if (awareness >= 100f) 
+                    {
+                        hasBeenAlerted = true;
+                        currentChaseTimer = chaseMemoryDuration; 
+                    }
+                }
+            }
+            else
+            {
+                if (awareness > 0f)
+                {
+                    if (currentGraceTimer > 0f)
+                    {
+                        currentGraceTimer -= Time.deltaTime;
+                    }
+                    else
+                    {
+                        // BUG 1 FIX: Green Zone Decay logic implemented properly
+                        if (awareness < investigateThreshold)
+                        {
+                            // Let them stare at the wall for 3 seconds, then naturally decay
+                            if (currentLowAwarenessTimer > 0f)
+                            {
+                                currentLowAwarenessTimer -= Time.deltaTime;
+                            }
+                            else
+                            {
+                                awareness -= decayRate * Time.deltaTime;
+                            }
+                        }
+                        else if (!isDynamicSearching && hasLastKnownPosition)
+                        {
+                            // Yellow/Orange: Do not decay while physically walking to the ghost marker!
+                        }
+                        else if (isDynamicSearching)
+                        {
+                            if (hasBeenAlerted)
+                            {
+                                // Permanent Alert: Lock awareness at 90f. Infinite search.
+                                awareness = 90f; 
+                            }
+                            else
+                            {
+                                // Suspicious Alert: Run the timer down, then decay awareness.
+                                huntTimer -= Time.deltaTime;
+                                if (huntTimer <= 0f)
+                                {
+                                    awareness -= decayRate * Time.deltaTime;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            awareness -= decayRate * Time.deltaTime;
+                        }
+                    }
+                }
             }
         }
 
-        // Step 3: Map Awareness directly to State Machine
+        // Clean up Patrol Data when Awareness completely resets
+        if (awareness <= 0f && (isDynamicSearching || hasLastKnownPosition))
+        {
+            isDynamicSearching = false;
+            hasLastKnownPosition = false;
+            if (assignedPatrolRoute != null)
+            {
+                // Snap to the closest node and resume patrol!
+                currentPatrolIndex = assignedPatrolRoute.GetClosestNodeIndex(transform.position);
+                isWaitingAtPatrolNode = false;
+            }
+        }
+
+        // Step 3: State Mapping
         if (awareness >= 100f)
         {
             currentState = (distanceToPlayer <= combatEngageRadius) ? AIState.CombatEngaged : AIState.Chasing;
@@ -158,50 +288,124 @@ public class AshigaruBrain : MonoBehaviour
         switch (currentState)
         {
             case AIState.Unaware:
-                if (agent.hasPath) agent.ResetPath();
+                if (assignedPatrolRoute != null && assignedPatrolRoute.nodes.Count > 0)
+                {
+                    agent.isStopped = false;
+                    agent.speed = suspiciousWalkSpeed * 0.6f; 
+                    agent.acceleration = suspiciousAcceleration;
+                    agent.angularSpeed = suspiciousTurnSpeed;
+
+                    if (isWaitingAtPatrolNode)
+                    {
+                        agent.isStopped = true;
+                        patrolWaitTimer -= Time.deltaTime;
+                        if (patrolWaitTimer <= 0f)
+                        {
+                            isWaitingAtPatrolNode = false;
+                            currentPatrolIndex = (currentPatrolIndex + 1) % assignedPatrolRoute.nodes.Count;
+                        }
+                    }
+                    else
+                    {
+                        Transform targetNode = assignedPatrolRoute.nodes[currentPatrolIndex].waypoint;
+                        if (targetNode != null)
+                        {
+                            agent.SetDestination(targetNode.position);
+                            if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.2f)
+                            {
+                                isWaitingAtPatrolNode = true;
+                                patrolWaitTimer = assignedPatrolRoute.nodes[currentPatrolIndex].waitTime;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if (agent.hasPath) agent.ResetPath();
+                    agent.isStopped = true;
+                }
                 break;
 
             case AIState.Suspicious:
                 if (awareness < investigateThreshold)
                 {
-                    // Phase 1: Noticing. Frozen but watching.
                     agent.isStopped = true;
-                    
-                    // Slowly rotate head/body towards the noise to telegraph suspicion
-                    Vector3 lookDir = playerTarget.position - transform.position;
+                    Vector3 lookPos = isPlayerVisible ? playerTarget.position : (hasLastKnownPosition ? lastKnownPosition : transform.position);
+                    Vector3 lookDir = lookPos - transform.position;
                     lookDir.y = 0;
                     if (lookDir != Vector3.zero)
-                    {
                         transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(lookDir), Time.deltaTime * 3f);
-                    }
                 }
                 else
                 {
-                    // Phase 2: Investigating. Threshold broken, start walking.
                     agent.isStopped = false;
                     
-                    // Normalize the remaining awareness to scale speed dynamically
-                    // Ex: At awareness 40, speed is 2.5. At awareness 99, speed is close to 7.0.
+                    float activeWalkSpeed = hasBeenAlerted ? franticJogSpeed : suspiciousWalkSpeed;
                     float speedLerp = (awareness - investigateThreshold) / (100f - investigateThreshold);
-                    agent.speed = Mathf.Lerp(suspiciousWalkSpeed, chasingRunSpeed, speedLerp);
+                    
+                    agent.speed = Mathf.Lerp(activeWalkSpeed, chasingRunSpeed, speedLerp);
+                    agent.acceleration = Mathf.Lerp(suspiciousAcceleration, chasingAcceleration, speedLerp);
+                    agent.angularSpeed = Mathf.Lerp(suspiciousTurnSpeed, chasingTurnSpeed, speedLerp);
 
-                    pathTimer += Time.deltaTime;
-                    if (pathTimer >= pathUpdateTime)
+                    if (isPlayerVisible)
                     {
-                        pathTimer = 0f;
-                        agent.SetDestination(playerTarget.position);
+                        pathTimer += Time.deltaTime;
+                        if (pathTimer >= pathUpdateTime)
+                        {
+                            pathTimer = 0f;
+                            agent.SetDestination(playerTarget.position);
+                        }
+                    }
+                    else if (!isDynamicSearching && hasLastKnownPosition)
+                    {
+                        pathTimer += Time.deltaTime;
+                        if (pathTimer >= pathUpdateTime)
+                        {
+                            pathTimer = 0f;
+                            agent.SetDestination(lastKnownPosition);
+                        }
+
+                        if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.5f)
+                        {
+                            isDynamicSearching = true;
+                            searchWaitTimer = 1.0f; 
+                            currentSearchDestination = transform.position;
+                        }
+                    }
+                    else if (isDynamicSearching)
+                    {
+                        if (searchWaitTimer > 0f)
+                        {
+                            agent.isStopped = true;
+                            searchWaitTimer -= Time.deltaTime;
+                            transform.Rotate(0, 90f * Time.deltaTime, 0); 
+                        }
+                        else
+                        {
+                            agent.isStopped = false;
+                            agent.SetDestination(currentSearchDestination);
+
+                            if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.5f)
+                            {
+                                searchWaitTimer = Random.Range(1.5f, 3.0f);
+                                currentSearchDestination = GetRandomNavMeshPoint(lastKnownPosition, searchRadius);
+                            }
+                        }
                     }
                 }
                 break;
 
             case AIState.Chasing:
+                agent.isStopped = false;
                 agent.speed = chasingRunSpeed;
+                agent.acceleration = chasingAcceleration;
+                agent.angularSpeed = chasingTurnSpeed;
+                
                 pathTimer += Time.deltaTime;
                 if (pathTimer >= pathUpdateTime)
                 {
                     pathTimer = 0f;
                     agent.SetDestination(playerTarget.position);
-                    agent.isStopped = false;
                 }
                 break;
 
@@ -217,9 +421,24 @@ public class AshigaruBrain : MonoBehaviour
         }
     }
 
+    private Vector3 GetRandomNavMeshPoint(Vector3 center, float radius)
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            Vector3 randomDirection = Random.insideUnitSphere * radius;
+            randomDirection += center;
+            
+            if (NavMesh.SamplePosition(randomDirection, out NavMeshHit hit, radius, NavMesh.AllAreas))
+            {
+                return hit.position;
+            }
+        }
+        return center; 
+    }
+
     private void UpdateDebugColors()
     {
-        if (coneMat == null || combatMat == null) return;
+        if (coneMat == null || combatMat == null || escapeMat == null) return;
 
         Color targetConeColor = new Color(0.0f, 1.0f, 0.2f, 0.15f); 
         Color targetCombatColor = new Color(1.0f, 0.1f, 0.1f, 0.1f);
@@ -241,6 +460,9 @@ public class AshigaruBrain : MonoBehaviour
                 break;
         }
 
+        if (awareness >= 100f) escapeMat.SetColor("_BaseColor", new Color(1.0f, 0.0f, 0.0f, 0.15f));
+        else escapeMat.SetColor("_BaseColor", new Color(1.0f, 1.0f, 1.0f, 0.03f));
+
         coneMat.SetColor("_BaseColor", targetConeColor);
         combatMat.SetColor("_BaseColor", targetCombatColor);
     }
@@ -259,12 +481,22 @@ public class AshigaruBrain : MonoBehaviour
                 case AIState.Chasing: Gizmos.color = new Color(1.0f, 0.4f, 0.0f); break; 
                 case AIState.CombatEngaged: Gizmos.color = Color.red; break;
             }
+
+            if (isDynamicSearching)
+            {
+                Gizmos.color = new Color(1f, 0.5f, 0f, 0.2f);
+                Gizmos.DrawWireSphere(lastKnownPosition, searchRadius);
+            }
         }
         else Gizmos.color = new Color(0.0f, 0.8f, 0.4f, 0.5f); 
 
         Vector3 eyePos = transform.position + Vector3.up * eyeHeightOffset;
         Gizmos.DrawSphere(eyePos, 0.15f);
 
+        Gizmos.color = Application.isPlaying && awareness >= 100f ? new Color(1.0f, 0.0f, 0.0f, 0.5f) : new Color(1.0f, 1.0f, 1.0f, 0.1f);
+        Gizmos.DrawWireSphere(transform.position, escapeRadius);
+
+        Gizmos.color = Application.isPlaying ? Gizmos.color : new Color(0.0f, 0.8f, 0.4f, 0.5f);
         Vector3 leftRay = Quaternion.Euler(0, -viewAngle / 2f, 0) * transform.forward;
         Vector3 rightRay = Quaternion.Euler(0, viewAngle / 2f, 0) * transform.forward;
         Gizmos.DrawLine(eyePos, eyePos + leftRay * detectionRadius);
@@ -305,6 +537,18 @@ public class AshigaruBrain : MonoBehaviour
         debugContainer = new GameObject("[AI_Debug_Rig]");
         debugContainer.transform.SetParent(transform, false);
 
+        escapeVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        escapeVisual.transform.SetParent(debugContainer.transform, false);
+        escapeVisual.transform.localPosition = new Vector3(0, 0.005f, 0); 
+        escapeMat = CreateURPTransparentMaterial(new Color(1.0f, 1.0f, 1.0f, 0.03f));
+        PreparePrimitiveChild(escapeVisual, debugContainer.transform, escapeMat);
+
+        combatVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        combatVisual.transform.SetParent(debugContainer.transform, false);
+        combatVisual.transform.localPosition = new Vector3(0, 0.01f, 0); 
+        combatMat = CreateURPTransparentMaterial(new Color(1.0f, 0.1f, 0.1f, 0.10f));
+        PreparePrimitiveChild(combatVisual, debugContainer.transform, combatMat);
+
         coneVisual = new GameObject("Procedural_Vision_Cone");
         coneVisual.transform.SetParent(debugContainer.transform, false);
         coneVisual.transform.localPosition = new Vector3(0, 0.02f, 0); 
@@ -315,10 +559,6 @@ public class AshigaruBrain : MonoBehaviour
         coneRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         coneRenderer.receiveShadows = false;
 
-        combatVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        combatMat = CreateURPTransparentMaterial(new Color(1.0f, 0.1f, 0.1f, 0.10f));
-        PreparePrimitiveChild(combatVisual, debugContainer.transform, combatMat);
-
         hitboxVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
         PreparePrimitiveChild(hitboxVisual, debugContainer.transform, CreateURPTransparentMaterial(new Color(0.0f, 0.8f, 1.0f, 0.3f)));
 
@@ -328,7 +568,6 @@ public class AshigaruBrain : MonoBehaviour
 
     private void PreparePrimitiveChild(GameObject obj, Transform parent, Material targetMat)
     {
-        obj.transform.SetParent(parent, false);
         if (obj.TryGetComponent<Collider>(out Collider col)) Destroy(col);
         if (obj.TryGetComponent<MeshRenderer>(out MeshRenderer ren))
         {
@@ -340,7 +579,8 @@ public class AshigaruBrain : MonoBehaviour
 
     private void UpdateGeometryTransforms()
     {
-        if (combatVisual != null) combatVisual.transform.localScale = new Vector3(combatEngageRadius * 2f, 0.01f, combatEngageRadius * 2f);
+        if (escapeVisual != null) escapeVisual.transform.localScale = new Vector3(escapeRadius * 2f, 0.001f, escapeRadius * 2f);
+        if (combatVisual != null) combatVisual.transform.localScale = new Vector3(combatEngageRadius * 2f, 0.002f, combatEngageRadius * 2f);
         if (hitboxVisual != null)
         {
             hitboxVisual.transform.localScale = hitBoxDimensions;
@@ -352,7 +592,7 @@ public class AshigaruBrain : MonoBehaviour
     private Mesh GenerateWedgeMesh()
     {
         Mesh mesh = new Mesh();
-        int segments = 24; 
+        int segments = 32; 
         Vector3[] vertices = new Vector3[segments + 2];
         int[] triangles = new int[segments * 3];
         vertices[0] = Vector3.zero; 
