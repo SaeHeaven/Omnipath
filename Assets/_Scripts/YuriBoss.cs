@@ -151,7 +151,7 @@ public class YuriBoss : MonoBehaviour, IDamageable
             if (playerController.height >= 1.0f)
             {
                 Debug.LogError("💥 Adam hit by sweep strike!");
-                AdamState.Instance.TakeDamage(25f);
+                AdamState.Instance.TakeDamage(25f, transform.forward);
             }
         }
         ResetToStalking();

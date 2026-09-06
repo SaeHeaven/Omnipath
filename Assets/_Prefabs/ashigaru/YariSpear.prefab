@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &6285383657729867724
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.37243992
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.3724401
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.37244013
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.12268972
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.11745771
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.057924777
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.53162706
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0.4469429
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0.47011673
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0.54461455
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}
+      propertyPath: m_Name
+      value: YariSpear
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 859aa111c7c9c754f9d3dceea47200f4, type: 3}

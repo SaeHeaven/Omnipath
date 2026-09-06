@@ -6,9 +6,9 @@ public class AdamFirearm : MonoBehaviour
     private Transform cameraTransform;
 
     [Header("Ballistic Settings")]
-    public float fireRange = 50f;       
-    public float fireDamage = 2.0f;     
-    public float hatredCostPerShot = 10f; 
+    public float fireRange = 50f;            
+    public float fireDamage = 2.0f;          
+    public float staminaCostPerShot = 3.0f; // Micro-tax per shot
 
     private void Awake()
     {
@@ -30,24 +30,24 @@ public class AdamFirearm : MonoBehaviour
 
     private void ShootWeapon()
     {
-        if (!AdamState.Instance.SpendHatred(hatredCostPerShot))
+        // 1. Enforce Micro-Tax Check
+        if (AdamState.Instance == null || !AdamState.Instance.ConsumeStamina(staminaCostPerShot))
         {
-            Debug.LogWarning("❌ GUN CLICK! Out of Hatred!");
+            Debug.LogWarning("🛑 GUN CLICK! Out of Stamina or Exhausted!");
             return;
         }
 
-        // Use the new method so the UI updates
+        // 2. Consume Ammo
         AdamState.Instance.ConsumeAmmo();
-        Debug.Log($"💥 Shot fired! Ammo Remaining: {AdamState.Instance.currentAmmo}");
+        Debug.Log($"🔫 Shot fired! Ammo Remaining: {AdamState.Instance.currentAmmo} | Stamina Tax: -{staminaCostPerShot}");
 
+        // 3. Ballistic Raycast
         Ray ray = new Ray(cameraTransform.position, cameraTransform.forward);
         RaycastHit hitData;
-
         Debug.DrawRay(cameraTransform.position, cameraTransform.forward * fireRange, Color.cyan, 0.2f);
 
         if (Physics.Raycast(ray, out hitData, fireRange))
         {
-            // Universal Damage System
             IDamageable target = hitData.collider.GetComponent<IDamageable>();
             if (target != null)
             {
@@ -57,7 +57,6 @@ public class AdamFirearm : MonoBehaviour
 
         if (AdamState.Instance.currentAmmo <= 0)
         {
-            // Use the new method so the UI updates
             AdamState.Instance.ReloadAmmo();
             Debug.Log("🔄 Firearm mechanics cycled.");
         }
